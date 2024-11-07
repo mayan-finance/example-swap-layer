@@ -1,7 +1,7 @@
 use crate::{
     composite::*,
     error::SwapLayerError,
-    state::{Peer, RedeemOption, StagedOutbound, StagedOutboundInfo, StagedRedeem},
+    state::{RedeemOption, StagedOutbound, StagedOutboundInfo, StagedRedeem},
     utils, TRANSFER_AUTHORITY_SEED_PREFIX,
 };
 use anchor_lang::{prelude::*, system_program};
@@ -68,6 +68,9 @@ pub struct StageOutbound<'info> {
         payer = payer,
         space = StagedOutbound::try_compute_size(&args.redeem_option, &args.encoded_output_token)?,
         constraint = {
+            // Disallow amount in of zero.
+            require!(args.amount_in != 0, SwapLayerError::ZeroAmountIn);
+
             // Cannot send to zero address.
             require!(args.recipient != [0; 32], SwapLayerError::InvalidRecipient);
 
@@ -279,6 +282,13 @@ pub fn stage_outbound(ctx: Context<StageOutbound>, args: StageOutboundArgs) -> R
                     SwapLayerError::DelegatedAmountMismatch,
                 );
 
+                // And make sure the delegated authority is the program transfer authority.
+                require!(
+                    Option::<Pubkey>::from(sender_token.delegate)
+                        .is_some_and(|delegate| { delegate == program_transfer_authority.key() }),
+                    SwapLayerError::NotProgramTransferAuthority,
+                );
+
                 let (hashed_args, authority_bump) = last_transfer_authority_signer_seeds.unwrap();
 
                 token_interface::transfer_checked(
@@ -317,17 +327,11 @@ pub fn stage_outbound(ctx: Context<StageOutbound>, args: StageOutboundArgs) -> R
                     transfer_amount,
                 )?;
 
-                let peer_seeds = &ctx.accounts.target_peer.seeds;
-                token_interface::sync_native(CpiContext::new_with_signer(
+                token_interface::sync_native(CpiContext::new(
                     src_token_program.to_account_info(),
                     token_interface::SyncNative {
                         account: custody_token.to_account_info(),
                     },
-                    &[&[
-                        Peer::SEED_PREFIX,
-                        &peer_seeds.chain.to_be_bytes(),
-                        &[peer_seeds.bump],
-                    ]],
                 ))?;
 
                 sender.key()

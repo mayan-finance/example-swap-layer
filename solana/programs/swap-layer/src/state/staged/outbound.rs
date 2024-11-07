@@ -43,6 +43,10 @@ pub struct StagedOutboundInfo {
     pub target_chain: u16,
 
     /// Intended recipient of the transfer.
+    ///
+    /// NOTE: This recipient will be set to the zero address after a swap is completed if there is
+    /// any dust remaining in the custody token account. Setting this to the zero address will
+    /// prevent replaying the same outbound swap.
     pub recipient: [u8; 32],
 
     /// This value is only checked for swaps.
@@ -67,7 +71,6 @@ impl StagedOutbound {
     const BASE_SIZE: usize = 8 // DISCRIMINATOR
         + StagedOutboundInfo::INIT_SPACE
         + 1 // StagedRedeem discrimant
-        + 1 // encoded_output_token === None
         ;
 
     pub fn try_compute_size(
